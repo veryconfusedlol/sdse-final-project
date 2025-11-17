@@ -13,16 +13,19 @@ data = pd.read_csv("car_data.csv")
 print(data.head(5))
 
 
-categorical = ['type', 'drive', 'fuel_type', 'make', 'model','transmission']
+categorical = ['type', 'drive', 'make', 'model','transmission']
 numerical = ['cylinders', 'displacement']
 output = 'combination_mpg' 
 
+num_unique = []
+names_unique = {}
+# how many classes in each categorical parameter?
 for col in categorical:
     print(f"\n{col}: {data[col].nunique()} unique classes")
-    print(data[col].value_counts().head(10))
-
-
-for col in categorical:
+    num_unique.append( data[col].nunique())
+    names_unique[col] = data[col].unique()
+    
+    # plotting histograms
     plt.figure(figsize=(8, 4))
     data[col].value_counts().plot(kind='bar')
     plt.title(f"Distribution of {col}")
