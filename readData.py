@@ -8,6 +8,12 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.layers import Dropout
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 
 # Reading in the data
 data = pd.read_csv("car_data.csv")
@@ -65,6 +71,7 @@ y_pred = model.predict(X_test)
 r2 = r2_score(y_test, y_pred)
 print(f"\nLinear Regression R² Score on test set: {r2:.3f}")
 
+
 # Graphing stuff
 viz_feature = 'displacement'
 X_viz = data[[viz_feature]].values
@@ -101,3 +108,117 @@ for col in categorical:
     plt.xlabel(col)
     plt.ylabel("Count")
 plt.show()
+
+# ====== PREPARE NN DATA  ======
+
+# 1. Fit preprocessor ONLY on training data
+preprocessor.fit(X_train)
+
+# 2. Transform train and test sets
+X_train_enc = preprocessor.transform(X_train)
+X_test_enc  = preprocessor.transform(X_test)
+
+# 3. Scale features (sparse safe)
+scaler = StandardScaler(with_mean=False)
+scaler.fit(X_train_enc)
+
+X_train_enc = scaler.transform(X_train_enc)
+X_test_enc  = scaler.transform(X_test_enc)
+
+# 4. Convert to dense matrices for Keras
+X_train_enc = X_train_enc.toarray()
+X_test_enc  = X_test_enc.toarray()
+
+print("Final input feature dimension:", X_train_enc.shape[1])
+
+# ====== NN MODEL  ======
+# Model A - Simple 1-hidden-layer network
+# Architecture: Input → Dense(32, ReLU) → Dense(1)
+
+
+def build_model_A(input_dim):
+    model = Sequential([
+        Dense(32, activation='relu', input_dim=input_dim),
+        Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+# Model B — Deeper network
+# Architecture: Input → Dense(64, ReLU) → Dense(32, ReLU) → Dense(1)
+
+def build_model_B(input_dim):
+    model = Sequential([
+        Dense(64, activation='relu', input_dim=input_dim),
+        Dense(32, activation='relu'),
+        Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+# Model C — Add dropout (regularized)
+# Architecture: Input → Dense(64, ReLU) → Dropout(0.25) → Dense(32, ReLU) → Dense(1)
+def build_model_C(input_dim):
+    model = Sequential([
+        Dense(64, activation='relu', input_dim=input_dim),
+        Dropout(0.25),
+        Dense(32, activation='relu'),
+        Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+# Model D — Wide network with batch normalization
+# Architecture: Input → Dense(128, ReLU) → BatchNormalization → Dense(64, ReLU) → BatchNormalization → Dense(1)
+from tensorflow.keras.layers import BatchNormalization
+
+def build_model_D(input_dim):
+    model = Sequential([
+        Dense(128, activation='relu', input_dim=input_dim),
+        BatchNormalization(),
+        Dense(64, activation='relu'),
+        BatchNormalization(),
+        Dense(1)
+    ])
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    return model
+
+# Train and evaluate each model
+callbacks = [
+    EarlyStopping(patience=10, restore_best_weights=True)
+]
+
+models = {
+    "Model A": build_model_A(X_train_enc.shape[1]),
+    "Model B": build_model_B(X_train_enc.shape[1]),
+    "Model C": build_model_C(X_train_enc.shape[1]),
+    "Model D": build_model_D(X_train_enc.shape[1]),
+}
+
+history = {}
+results = {}
+
+for name, model in models.items():
+    print(f"Training {name}...")
+    history[name] = model.fit(
+        X_train_enc, y_train,
+        validation_split=0.2,
+        epochs=100,
+        batch_size=32,
+        callbacks=callbacks,
+        verbose=0
+    )
+    test_mse, test_mae = model.evaluate(X_test_enc, y_test, verbose=0)
+    results[name] = (test_mse, test_mae)
+    print(f"{name} — Test MAE: {test_mae:.3f}")
+
+# Plot training curves
+for name in history:
+    plt.figure(figsize=(6,4))
+    plt.plot(history[name].history['loss'], label='Train Loss')
+    plt.plot(history[name].history['val_loss'], label='Val Loss')
+    plt.title(name)
+    plt.xlabel("Epochs")
+    plt.ylabel("MSE")
+    plt.legend()
+    plt.show()
